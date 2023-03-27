@@ -5,11 +5,11 @@ export const name = 'nieta-internal'
 
 const SERVER_CONFIG_TYPE = Schema.object({
   name: Schema.string().required(),
-  user: Schema.string().required(),
-  host: Schema.string().required(),
+  user: Schema.string().required().default('root'),
+  host: Schema.string().required().default('region-3.seetacloud.com'),
   port: Schema.number().required(),
   password: Schema.string().required(),
-  webuiPath: Schema.string().default('~/autodl-tmp/stable-diffusion-webui'),
+  webuiPath: Schema.string().required().default('~/autodl-tmp/webui'),
 })
 
 export interface Config {
@@ -49,6 +49,7 @@ async function WebuiStatusCallback(config: Config) {
       export dir2=$(find ${s.webuiPath}/outputs/img2img-images -type d -name '????-??-??' | sort -r | head -n 1) &&
       find "$dir1" "$dir2" -type f -exec stat -c \'%y %n\' {} \\; | sort -r | head -n 1 | awk -F'/' '{print substr($1, 1, 16) " " $NF}'
     `)
+    console.log(result)
     ret.push(`==== ${s.name} ====\n最近使用时间：${result.stdout}`)
   }
 
