@@ -8,7 +8,7 @@ const SERVER_CONFIG_TYPE = Schema.object({
   user: Schema.string().required(),
   host: Schema.string().required(),
   port: Schema.number().required(),
-  privateKey: Schema.string().required(),
+  password: Schema.string().required(),
   webuiPath: Schema.string().default('~/autodl-tmp/stable-diffusion-webui'),
 })
 
@@ -42,7 +42,7 @@ async function WebuiStatusCallback(config: Config) {
       host: s.host,
       port: s.port,
       username: s.user,
-      privateKey: s.privateKey,
+      password: s.password,
     })
     let result = await ssh.execCommand(`
       export dir1=$(find ${s.webuiPath}/outputs/txt2img-images -type d -name '????-??-??' | sort -r | head -n 1) &&
