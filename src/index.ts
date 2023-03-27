@@ -10,6 +10,7 @@ const SERVER_CONFIG_TYPE = Schema.object({
   port: Schema.number().required(),
   password: Schema.string().required(),
   webuiPath: Schema.string().required().default('~/autodl-tmp/webui'),
+  webuiURL: Schema.string(),
 })
 
 export interface Config {
@@ -31,7 +32,7 @@ function WebuiListCmdCallback(config: Config) {
     return 'no configed servers'
   }
 
-  return config.servers.map(s => `${s.name}: ${s.user}@${s.host}:${s.port}`).join('\n')
+  return config.servers.map(s => `${s.name}: ${s.webuiURL}`).join('\n')
 }
 
 async function WebuiStatusCallback(config: Config) {
