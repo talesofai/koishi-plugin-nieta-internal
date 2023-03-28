@@ -1,4 +1,4 @@
-import { Context, Schema } from 'koishi'
+import { Context, Schema, sleep } from 'koishi'
 import { NodeSSH } from 'node-ssh'
 
 export const name = 'nieta-internal'
@@ -15,18 +15,28 @@ const ServerConfig = Schema.object({
 })
 
 export interface Config {
+  fGFWServer: string,
+  loraModelsPath: string,
   servers: Array<InstanceType<typeof ServerConfig>>
 }
 
 export const Config: Schema<Config> = Schema.object({
+  fGFWServer: Schema.string().required(),
+  loraModelsPath: Schema.string().required(),
   servers: Schema.array(ServerConfig).description('Server SSH client')
 })
 
 
 export function apply(ctx: Context, config: Config) {
-  ctx.command('webui.list').action(() => WebuiListCmdCallback(config))
-  ctx.command('webui.status').action(async () => await WebuiStatusCallback(config))
-  ctx.command('webui.restart <server:string>').action(async (_, server) => await WebuiRestartCallback(config, server))
+  ctx.command('webui.list')
+    .action(() => WebuiListCmdCallback(config))
+  ctx.command('webui.status')
+    .action(async () => WebuiStatusCallback(config))
+  ctx.command('webui.restart <server:string>')
+    .action(async (_, server) => WebuiRestartCallback(config, server))
+  ctx.command('webui.download.lora <url:string>')
+    .option('name', '<name:string>')
+    .action(async (argv, url) => WebuiDownloadLora(argv, url, config))
 }
 
 function WebuiListCmdCallback(config: Config) {
@@ -70,13 +80,7 @@ webui 进程状态：${runStatus}
 }
 
 async function WebuiRestartCallback(config: Config, server: string) {
-  let sc: InstanceType<typeof ServerConfig>
-
-  config.servers.forEach(s => {
-    if (s.name == server) {
-      sc = s
-    }
-  })
+  const sc = getServerConfig(config, server)
 
   if (!sc) {
     return `server not found ${server}`
@@ -94,4 +98,60 @@ async function WebuiRestartCallback(config: Config, server: string) {
   await ssh.execCommand(`cd ${sc.webuiPath} && nohup ${sc.webuiLaunchCmd} &`)
 
   return `${server} 重启中，请等待一分钟……`
+}
+
+async function WebuiDownloadLora(argv, url: string, config: Config) {
+  const sc = getServerConfig(config, config.fGFWServer)
+
+  if (!sc) {
+    return 'no valid fGFWServer'
+  }
+
+  const ssh = new NodeSSH()
+  await ssh.connect({
+    host: sc.host,
+    port: sc.port,
+    username: sc.user,
+    password: sc.password,
+  })
+
+  let ret = (await ssh.execCommand("pgrep wget")).stdout
+  if (ret) {
+    return '有人在下载了，稍微等等吧'
+  }
+
+  const tmpDir = '/root/autodl-fs/wjz_data/tmp/';
+  const setProxy = 'export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=http://127.0.0.1:7890'
+  const echoLog = '(head -n 9 wget_bot.log; tail -n 9 wget_bot.log) | uniq'
+  let downloadCmd = `wget --progress=dot -b -o wget_bot.log --tries=2 --timeout=8 -P ${tmpDir} `;
+  if (argv.options.name) {
+    downloadCmd += `-O ${argv.options.name} `;
+  }
+  downloadCmd += url;
+
+  await ssh.execCommand([setProxy, downloadCmd].join(' && '));
+  let sec = 0
+  while (sec <= 10 * 60) {
+    ret = (await ssh.execCommand("pgrep wget")).stdout
+    if (!ret) {
+      ret = (await ssh.execCommand(echoLog)).stdout
+      if (ret.indexOf('saved')) {
+        const downloadPath = ret.match(/Saving to: '(.+)'/)[0];
+        const mvRet = (await ssh.execCommand(`mv -v ${downloadPath} ${config.loraModelsPath} | awk '{print $NF}'`)).stdout;
+        return `==== 下载应该成功了 ====\n${ret}\n${mvRet}`;
+      } else {
+        return `==== 下载失败 ====\n${ret}`;
+      }
+    }
+
+    argv.session.send((await ssh.execCommand(echoLog)).stdout);
+    await sleep(20 * 1000);
+    sec += 20
+  }
+
+  return (await ssh.execCommand(echoLog)).stdout
+}
+
+function getServerConfig(config: Config, serverName: string) {
+  return config.servers.find(s => s.name == serverName)
 }
