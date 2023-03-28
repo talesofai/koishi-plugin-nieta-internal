@@ -54,9 +54,10 @@ async function WebuiStatusCallback(config: Config) {
       find "$dir1" "$dir2" -type f -exec stat -c \'%y %n\' {} \\; | sort -r | head -n 1 | awk -F'/' '{print substr($1, 1, 16)}'
     `)
 
-    let runStatus = 'Stopped'
-    if ((await ssh.execCommand(`pgrep -f 'launch.*webui'`)).stdout) {
-      runStatus = 'Running'
+    let runStatus = '进程没找到，可以重启试下'
+    const etime = (await ssh.execCommand("pgrep -f 'launch.*webui' | head -n 1 | xargs ps -o etime= -p")).stdout
+    if (etime) {
+      runStatus = `运行时长为 ${etime}`
     }
 
     ret.push(`
@@ -92,5 +93,5 @@ async function WebuiRestartCallback(config: Config, server: string) {
   await ssh.execCommand("pgrep -f 'launch.*webui' | head -n 1 | xargs kill")
   await ssh.execCommand(`cd ${sc.webuiPath} && nohup ${sc.webuiLaunchCmd} &`)
 
-  return `请等待一分钟……`
+  return `${server} 重启中，请等待一分钟……`
 }
