@@ -3,7 +3,7 @@ import { NodeSSH } from 'node-ssh'
 
 export const name = 'nieta-internal'
 
-const SERVER_CONFIG_TYPE = Schema.object({
+const ServerConfig = Schema.object({
   name: Schema.string().required(),
   user: Schema.string().required().default('root'),
   host: Schema.string().required().default('region-3.seetacloud.com'),
@@ -14,17 +14,18 @@ const SERVER_CONFIG_TYPE = Schema.object({
 })
 
 export interface Config {
-  servers: any[]
+  servers: Array<InstanceType<typeof ServerConfig>>
 }
 
 export const Config: Schema<Config> = Schema.object({
-  servers: Schema.array(SERVER_CONFIG_TYPE).description('Server SSH client')
+  servers: Schema.array(ServerConfig).description('Server SSH client')
 })
 
 
 export function apply(ctx: Context, config: Config) {
   ctx.command('webui.list').action(() => WebuiListCmdCallback(config))
   ctx.command('webui.status').action(async () => await WebuiStatusCallback(config))
+  ctx.command('webui.restart <server:string>').action(async (_, server) => await WebuiRestartCallback(config, server))
 }
 
 function WebuiListCmdCallback(config: Config) {
@@ -45,14 +46,45 @@ async function WebuiStatusCallback(config: Config) {
       username: s.user,
       password: s.password,
     })
-    let result = await ssh.execCommand(`
+
+    let lastImage = await ssh.execCommand(`
       export dir1=$(find ${s.webuiPath}/outputs/txt2img-images -type d -name '????-??-??' | sort -r | head -n 1) &&
       export dir2=$(find ${s.webuiPath}/outputs/img2img-images -type d -name '????-??-??' | sort -r | head -n 1) &&
-      find "$dir1" "$dir2" -type f -exec stat -c \'%y %n\' {} \\; | sort -r | head -n 1 | awk -F'/' '{print substr($1, 1, 16) " " $NF}'
+      find "$dir1" "$dir2" -type f -exec stat -c \'%y %n\' {} \\; | sort -r | head -n 1 | awk -F'/' '{print substr($1, 1, 16)}'
     `)
-    console.log(result)
-    ret.push(`==== ${s.name} ====\n最近使用时间：${result.stdout}`)
+
+    let runStatus = 'Stopped'
+    if ((await ssh.execCommand(`pgrep -f 'launch.*webui'`)).stdout) {
+      runStatus = 'Running'
+    }
+
+    ret.push(`
+==== ${s.name} ====
+webui 进程状态：${runStatus}
+最近使用时间：${lastImage.stdout}`)
   }
 
   return ret.join('\n')
+}
+
+async function WebuiRestartCallback(config: Config, server: string) {
+  let serverConfig = new ServerConfig()
+
+  config.servers.forEach(s => {
+    if (s.name == server) {
+      serverConfig = s
+    }
+  })
+
+  if (!serverConfig) {
+    return `server not found ${server}`
+  }
+
+  const ssh = new NodeSSH()
+  await ssh.connect({
+    host: serverConfig.host,
+    port: serverConfig.port,
+    username: serverConfig.user,
+    password: serverConfig.password,
+  })
 }
