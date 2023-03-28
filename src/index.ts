@@ -17,12 +17,14 @@ const ServerConfig = Schema.object({
 export interface Config {
   fGFWServer: string,
   loraModelsPath: string,
+  ckptModelsPath: string,
   servers: Array<InstanceType<typeof ServerConfig>>
 }
 
 export const Config: Schema<Config> = Schema.object({
   fGFWServer: Schema.string().required(),
   loraModelsPath: Schema.string().required(),
+  ckptModelsPath: Schema.string().required(),
   servers: Schema.array(ServerConfig).description('Server SSH client')
 })
 
@@ -36,7 +38,10 @@ export function apply(ctx: Context, config: Config) {
     .action(async (_, server) => WebuiRestartCallback(config, server))
   ctx.command('webui.download.lora <url:string>')
     .option('name', '<name:string>')
-    .action(async (argv, url) => WebuiDownloadLora(argv, url, config))
+    .action(async (argv, url) => WebuiDownloadModel('lora', argv, url, config))
+  ctx.command('webui.download.ckpt <url:string>')
+    .option('name', '<name:string>')
+    .action(async (argv, url) => WebuiDownloadModel('ckpt', argv, url, config))
 }
 
 function WebuiListCmdCallback(config: Config) {
@@ -100,7 +105,7 @@ async function WebuiRestartCallback(config: Config, server: string) {
   return `${server} 重启中，请等待一分钟……`
 }
 
-async function WebuiDownloadLora(argv, url: string, config: Config) {
+async function WebuiDownloadModel(type: 'lora' | 'ckpt', argv, url: string, config: Config) {
   const sc = getServerConfig(config, config.fGFWServer)
 
   if (!sc) {
@@ -137,7 +142,16 @@ async function WebuiDownloadLora(argv, url: string, config: Config) {
       ret = (await ssh.execCommand(echoLog)).stdout
       if (ret.indexOf('saved')) {
         const downloadPath = ret.match(/Saving to: '(.+)'/)[0];
-        const mvRet = (await ssh.execCommand(`mv -v ${downloadPath} ${config.loraModelsPath} | awk '{print $NF}'`)).stdout;
+        let targetPath: string;
+        switch(type) {
+          case 'lora':
+            targetPath = config.loraModelsPath;
+            break;
+          case 'ckpt':
+            targetPath = config.ckptModelsPath;
+            break;
+        }
+        const mvRet = (await ssh.execCommand(`mv -v ${downloadPath} ${targetPath} | awk '{print $NF}'`)).stdout;
         return `==== 下载应该成功了 ====\n${ret}\n${mvRet}`;
       } else {
         return `==== 下载失败 ====\n${ret}`;
