@@ -11,6 +11,7 @@ const ServerConfig = Schema.object({
   password: Schema.string().required(),
   webuiPath: Schema.string().required().default('~/autodl-tmp/webui'),
   webuiURL: Schema.string(),
+  webuiLaunchCmd: Schema.string().default('/root/miniconda3/envs/xl_env/bin/python launch.py --ckpt-dir /root/autodl-nas/ckpt_models --no-half-vae --port 6006 --enable-insecure-extension-access --api --embeddings-dir /root/autodl-nas/embeddings --lora-dir /root/autodl-nas/lora_models --vae-path /root/autodl-nas/vae/anything-v4.0.vae.pt --controlnet-dir /root/autodl-nas/sd-webui-controlnet/models --xformers --vae-dir /root/autodl-nas/vae/ --share'),
 })
 
 export interface Config {
@@ -68,23 +69,28 @@ webui 进程状态：${runStatus}
 }
 
 async function WebuiRestartCallback(config: Config, server: string) {
-  let serverConfig = new ServerConfig()
+  let sc: InstanceType<typeof ServerConfig>
 
   config.servers.forEach(s => {
     if (s.name == server) {
-      serverConfig = s
+      sc = s
     }
   })
 
-  if (!serverConfig) {
+  if (!sc) {
     return `server not found ${server}`
   }
 
   const ssh = new NodeSSH()
   await ssh.connect({
-    host: serverConfig.host,
-    port: serverConfig.port,
-    username: serverConfig.user,
-    password: serverConfig.password,
+    host: sc.host,
+    port: sc.port,
+    username: sc.user,
+    password: sc.password,
   })
+
+  await ssh.execCommand("pgrep -f 'launch.*webui' | head -n 1 | xargs kill")
+  await ssh.execCommand(`cd ${sc.webuiPath} && nohup ${sc.webuiLaunchCmd} &`)
+
+  return `请等待一分钟……`
 }
