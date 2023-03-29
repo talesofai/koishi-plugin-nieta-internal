@@ -72,7 +72,7 @@ async function WebuiStatusCallback(config: Config) {
     let runStatus: string = '进程没找到，可以重启试下';
     let pid = await ssh.execCommand("pgrep -f 'launch.*webui'");
     if (pid.code == 0) {
-      const etime = await ssh.execCommand(`echo "${pid.stdout}" | xargs ps -o etime= -p`);
+      const etime = await ssh.execCommand(`echo "${pid.stdout}" | head -n 1 | xargs ps -o etime= -p`);
       if (etime.code == 0) {
         runStatus = `运行时长为 ${etime.stdout}`;
       }
