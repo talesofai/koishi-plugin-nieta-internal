@@ -69,10 +69,13 @@ async function WebuiStatusCallback(config: Config) {
       find "$dir1" "$dir2" -type f -exec stat -c \'%y %n\' {} \\; | sort -r | head -n 1 | awk -F'/' '{print substr($1, 1, 16)}'
     `)
 
-    let runStatus = '进程没找到，可以重启试下'
-    const etime = (await ssh.execCommand("pgrep -f 'launch.*webui' | head -n 1 | xargs ps -o etime= -p")).stdout
-    if (etime) {
-      runStatus = `运行时长为 ${etime}`
+    let runStatus: string = '进程没找到，可以重启试下';
+    let pid = await ssh.execCommand("pgrep -f 'launch.*webui'");
+    if (pid.code == 0) {
+      const etime = await ssh.execCommand(`echo "${pid.stdout}" | xargs ps -o etime= -p`);
+      if (etime.code == 0) {
+        runStatus = `运行时长为 ${etime.stdout}`;
+      }
     }
 
     ret.push(`
